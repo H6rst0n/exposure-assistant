@@ -14,7 +14,7 @@
 
 ## 安裝與第一次使用
 
-將交付的 `exposure-assistant-1.0.0-debug.apk` 傳到 Android 手機並開啟。依 Android 提示，允許目前開啟 APK 的檔案管理工具安裝此應用程式。這是自行安裝的測試版，不是 Google Play 商店版本。
+將交付的 `exposure-assistant-1.0.1-release.apk` 傳到 Android 手機並開啟。依 Android 提示，允許目前開啟 APK 的檔案管理工具安裝此應用程式。這是自行安裝的測試版，不是 Google Play 商店版本。
 
 1. **曝光換算**：輸入亮度已滿意的參考光圈、快門、ISO。
 2. 在目標卡片選「求快門／求光圈／求 ISO／求 ND」，再輸入其餘設定。
@@ -86,7 +86,11 @@ Windows 可使用正斜線路徑，例如 `sdk.dir=C:/Users/你的帳號/AppData
 
 Windows 對應命令為 `gradlew.bat`。首次建置需下載依賴，App 本身運作不需要網路。最佳化 APK 位於 `app/build/outputs/apk/release/app-release.apk`。
 
-專案附 `debug.keystore`，僅供重現及更新這份測試 APK；密碼為 Android 預設測試值 `android`，alias 為 `androiddebugkey`。**此測試金鑰不應作為正式發布簽章。** 1.0.1 的 release 建置仍沿用此測試金鑰，供既有使用者覆蓋更新；release 代表關閉偵錯並啟用 R8／資源縮減，不代表商店驗證或正式開發者身分。正式上架需另設私密發布金鑰。
+GitHub 原始碼不包含簽章金鑰。若專案根目錄有本機 `debug.keystore`，建置會沿用它；若沒有，則使用 Android 工具自動產生的預設 debug 金鑰。`release` 建置同樣使用這組本機測試金鑰，供自行安裝測試；它代表關閉偵錯並啟用 R8／資源縮減，不代表商店驗證或正式開發者身分。
+
+自行建置的 APK 若使用不同金鑰，無法直接覆蓋維護者提供的 APK。維護者需備份並保留原金鑰，才能持續更新已安裝的版本；金鑰不可提交至 Git，也不要附在 Release 的原始碼壓縮檔中。正式發布需另行規劃簽章金鑰。
+
+`outputs/`（APK 與測試報告）、`work/`（建置與開發紀錄）、`local.properties` 和金鑰均由 `.gitignore` 排除。APK 應另外放到 GitHub Releases，不直接提交至原始碼儲存庫。
 
 ## 程式結構
 

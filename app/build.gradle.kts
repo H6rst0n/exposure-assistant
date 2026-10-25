@@ -18,7 +18,11 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
-    signingConfigs.getByName("debug") { storeFile = rootProject.file("debug.keystore") }
+    // Keep the maintainer's local test identity; fresh clones use Android's default debug key.
+    val localTestKeystore = rootProject.file("debug.keystore")
+    if (localTestKeystore.exists()) {
+        signingConfigs.getByName("debug") { storeFile = localTestKeystore }
+    }
     buildTypes {
         release {
             isDebuggable = false
