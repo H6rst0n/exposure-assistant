@@ -8,3 +8,10 @@ local.properties
 # Local deliverables and build history
 /outputs/
 /work/
+
+# iOS generated files and local signing / build data
+ios/*.xcodeproj/
+ios/**/.build/
+ios/**/.swiftpm/
+DerivedData/
+*.xcresult/
