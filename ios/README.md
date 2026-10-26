@@ -49,6 +49,7 @@ CI 會動態選擇可用 iPhone simulator，不硬編碼裝置名稱。`project.
 
 - `ExposureCore`：數值、無效輸入、ND、底片、取整、模式限制與資料編碼。
 - `TimerSupport`：純時間狀態與中斷／復原邏輯。
+- `ExposureAssistantTests`：通知拒絕、排程失敗、權限／排程等待期間取消、背景到期保留通知、前景提示去重與新舊計時隔離（注入通知替身，不等於真實 iOS 通知交付測試）。
 - `ExposureAssistantUITests`：範例、錯誤輸入、設定重啟保存、分頁隔離、底片模式、旋轉、前景倒數完成及取消。
 - GitHub Actions：標準 public-repo macOS runner 執行 package tests、Xcode simulator UI tests 和 unsigned device Release build；不使用 larger runners。
 

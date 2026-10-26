@@ -74,11 +74,13 @@ struct ContentView: View {
                 }
                 ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) } }
             }
+            .colorMultiply(store.settings.red ? .red : .white)
             .tint(color)
-            .sheet(isPresented: $showSettings) { settingsSheet }
-            .sheet(isPresented: $showTimer) { timerSheet }
-            .sheet(isPresented: $showStars) { starsSheet }
-            .sheet(isPresented: $showHelp) { helpSheet }
+            .foregroundStyle(store.settings.red ? Color.red : Color.primary)
+            .sheet(isPresented: $showSettings) { settingsSheet.colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showTimer, onDismiss: { if timer.isStarting { timer.cancel() } }) { timerSheet.colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showStars) { starsSheet.colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showHelp) { helpSheet.colorMultiply(store.settings.red ? .red : .white) }
             .onChange(of: store.settings.page) { _ in
                 if astro && !store.settings.hideStars { showStars = true }
             }
@@ -208,7 +210,7 @@ struct ContentView: View {
                         } catch { timerError = error.localizedDescription }
                     }
                 }.disabled(timer.isRunning || timer.isStarting).accessibilityIdentifier("timer_start")
-            }.navigationTitle("曝光倒數").toolbar { Button("取消") { showTimer = false } }
+            }.navigationTitle("曝光倒數").toolbar { Button("取消") { if timer.isStarting { timer.cancel() }; showTimer = false } }
         }
     }
     private var settingsSheet: some View {

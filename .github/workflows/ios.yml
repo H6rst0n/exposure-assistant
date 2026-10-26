@@ -35,6 +35,22 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project ios/ExposureAssistant.xcodeproj -scheme ExposureAssistant -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/ios -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=NO | tee build-ios.log
+      - name: Export test screenshot to log (no artifact storage)
+        if: always()
+        run: |
+          if [ -d build/ios-tests.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path /tmp/ios-attachments || true
+            python3 - <<'PYCODE'
+          import pathlib, subprocess, base64
+          images = sorted(pathlib.Path('/tmp/ios-attachments').rglob('*.png'))
+          for i, path in enumerate(images[:8]):
+              out = f'/tmp/ios-shot-{i}.png'
+              subprocess.run(['sips', '-Z', '720', str(path), '--out', out], check=True, stdout=subprocess.DEVNULL)
+              data = base64.b64encode(pathlib.Path(out).read_bytes()).decode()
+              print(f'SCREENSHOT_BEGIN {i}')
+              for start in range(0, len(data), 1000): print(data[start:start+1000])
+              print(f'SCREENSHOT_END {i}')
+          PYCODE
       - name: Unsigned physical-device build
         run: xcodebuild build -project ios/ExposureAssistant.xcodeproj -scheme ExposureAssistant -destination 'generic/platform=iOS' -configuration Release -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO
   android-regression:

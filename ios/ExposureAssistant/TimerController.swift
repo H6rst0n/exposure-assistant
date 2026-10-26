@@ -6,6 +6,48 @@ import AudioToolbox
 import Darwin
 import TimerSupport
 
+enum TimerNotificationAccess: Equatable { case notDetermined, allowed, denied }
+
+@MainActor
+protocol TimerNotificationScheduling: AnyObject {
+    func access() async -> TimerNotificationAccess
+    func requestAuthorization() async throws -> Bool
+    func schedule(id: String, interval: Double, duration: Double, sound: Bool) async throws
+    func pendingIDs() async -> [String]
+    func removePending(_ ids: [String])
+    func removeDelivered(_ ids: [String])
+    func reset()
+}
+
+@MainActor
+final class SystemTimerNotifications: TimerNotificationScheduling {
+    private let center: UNUserNotificationCenter
+    init(center: UNUserNotificationCenter) { self.center = center }
+    func access() async -> TimerNotificationAccess {
+        let settings = await center.notificationSettings()
+        if settings.authorizationStatus == .notDetermined { return .notDetermined }
+        let authorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional || settings.authorizationStatus == .ephemeral
+        return authorized && settings.alertSetting == .enabled ? .allowed : .denied
+    }
+    func requestAuthorization() async throws -> Bool {
+        try await center.requestAuthorization(options: [.alert, .sound, .badge])
+    }
+    func schedule(id: String, interval: Double, duration: Double, sound: Bool) async throws {
+        let content = UNMutableNotificationContent()
+        content.title = "曝光時間已到"
+        content.body = "\(duration) 秒已結束，請手動關閉相機快門。"
+        content.sound = sound ? .default : nil
+        // iOS has no per-notification vibration switch. The app preference applies only
+        // to foreground feedback; system notification haptics remain user-controlled.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(0.1, interval), repeats: false)
+        try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+    func pendingIDs() async -> [String] { await center.pendingNotificationRequests().map(\.identifier) }
+    func removePending(_ ids: [String]) { center.removePendingNotificationRequests(withIdentifiers: ids) }
+    func removeDelivered(_ ids: [String]) { center.removeDeliveredNotifications(withIdentifiers: ids) }
+    func reset() { center.removeAllPendingNotificationRequests(); center.removeAllDeliveredNotifications() }
+}
+
 /// iOS notifications are best-effort, not an exact-alarm or camera-control API.
 /// Sound / Focus / notification settings and background scheduling remain system controlled.
 @MainActor
@@ -17,7 +59,9 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
     var isRunning: Bool { state.status == .active }
 
     private let defaults: UserDefaults
-    private let center: UNUserNotificationCenter
+    private let notifications: TimerNotificationScheduling
+    private let signal: (Bool, Bool) -> Void
+    private var signaledID: String?
     private let key = "exposure.ios.timer.v1"
     nonisolated private static let prefix = "exposure.timer."
     private var ticker: AnyCancellable?
@@ -30,21 +74,26 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
 
     init(defaults: UserDefaults = .standard,
          center: UNUserNotificationCenter = .current(),
+         notifications: TimerNotificationScheduling? = nil,
+         signal: @escaping (Bool, Bool) -> Void = { sound, vibration in
+             if sound { AudioServicesPlaySystemSound(1005) }
+             if vibration { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+         },
          now: @escaping () -> Double = { Double(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / 1_000_000_000 },
          boot: @escaping () -> String = TimerController.bootIdentifier) {
-        self.defaults = defaults; self.center = center; self.now = now; self.boot = boot
+        self.defaults = defaults; self.notifications = notifications ?? SystemTimerNotifications(center: center)
+        self.signal = signal; self.now = now; self.boot = boot
         super.init()
-        center.delegate = self
+        if notifications == nil { center.delegate = self }
         if ProcessInfo.processInfo.arguments.contains("--uitesting-reset") {
             defaults.removeObject(forKey: key)
-            center.removeAllPendingNotificationRequests()
-            center.removeAllDeliveredNotifications()
+            self.notifications.reset()
         }
         if let data = defaults.data(forKey: key), let restored = try? JSONDecoder().decode(ExposureTimerState.self, from: data) {
             state = restored
             state.restore(now: now(), currentBootID: boot())
             if state.status == .interrupted {
-                center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+                self.notifications.removePending([notificationID])
                 message = "先前計時已中斷（重新啟動、排程未完成或僅前景模式），未自動重啟。"
             }
             persist()
@@ -80,41 +129,36 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
         defer { if generation == token { isStarting = false } }
         do {
             if background {
-                var settings = await center.notificationSettings()
-                guard generation == token else { throw CancellationError() }
-                if settings.authorizationStatus == .notDetermined {
-                    let allowed = try await center.requestAuthorization(options: [.alert, .sound, .badge])
-                    guard generation == token else { throw CancellationError() }
+                var access = await notifications.access()
+                guard generation == token && !Task.isCancelled else { throw CancellationError() }
+                if access == .notDetermined {
+                    let allowed = try await notifications.requestAuthorization()
+                    guard generation == token && !Task.isCancelled else { throw CancellationError() }
                     guard allowed else { throw ExposureTimerError.notificationsUnavailable }
-                    settings = await center.notificationSettings()
+                    access = await notifications.access()
                 }
-                guard generation == token else { throw CancellationError() }
-                guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional || settings.authorizationStatus == .ephemeral else {
-                    throw ExposureTimerError.notificationsUnavailable
-                }
-                guard settings.alertSetting == .enabled else { throw ExposureTimerError.notificationsUnavailable }
+                guard generation == token && !Task.isCancelled else { throw CancellationError() }
+                guard access == .allowed else { throw ExposureTimerError.notificationsUnavailable }
             }
-            guard generation == token else { throw CancellationError() }
+            guard generation == token && !Task.isCancelled else { throw CancellationError() }
             guard UIApplication.shared.applicationState != .background else { throw CancellationError() }
             // A permission dialog can temporarily inactivate the scene; starting only requires the
             // app not to have entered background. A background transition cancels preparation.
             var candidate = try ExposureTimerState.begin(seconds: seconds, now: now(), bootID: boot(),
                 background: background, sound: sound, vibration: vibration, current: state, id: identifier)
-            center.removeDeliveredNotifications(withIdentifiers: [notificationID])
+            notifications.removePending([notificationID])
+            notifications.removeDelivered([notificationID])
+            signaledID = nil
             if background {
                 candidate.status = .preparing; state = candidate; persist()
-                let content = UNMutableNotificationContent()
-                content.title = "曝光時間已到"
-                content.body = "\(seconds) 秒已結束，請手動關閉相機快門。"
-                content.sound = sound ? .default : nil
-                // iOS offers no independent notification vibration switch; preference applies
-                // only to the app's foreground signal, never a promise about system haptics.
-                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(0.1, candidate.deadline - now()), repeats: false)
-                do { try await center.add(UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)) }
+                do {
+                    try await notifications.schedule(id: requestID, interval: candidate.deadline - now(),
+                                                     duration: seconds, sound: sound)
+                }
                 catch { throw ExposureTimerError.schedulingFailed }
-                guard generation == token else {
-                    center.removePendingNotificationRequests(withIdentifiers: [requestID])
-                    center.removeDeliveredNotifications(withIdentifiers: [requestID])
+                guard generation == token && !Task.isCancelled else {
+                    notifications.removePending([requestID])
+                    notifications.removeDelivered([requestID])
                     throw CancellationError()
                 }
             }
@@ -123,7 +167,7 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
             tick(signal: true)
         } catch {
             // Cancel can race both permission and add(). Never clear a newer timer.
-            center.removePendingNotificationRequests(withIdentifiers: [requestID])
+            notifications.removePending([requestID])
             if generation == token {
                 state = ExposureTimerState(); remaining = 0; persist(); updateIdleTimer()
             }
@@ -136,8 +180,8 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
         generation = UUID(); isStarting = false
         state = ExposureTimerState(); remaining = 0; message = nil
         persist(); updateIdleTimer()
-        center.removePendingNotificationRequests(withIdentifiers: [old])
-        center.removeDeliveredNotifications(withIdentifiers: [old])
+        notifications.removePending([old])
+        notifications.removeDelivered([old])
     }
 
     /// Parent should pass scenePhase == .active. Inactive is treated conservatively for
@@ -167,7 +211,7 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
         Task { [weak self] in await self?.validatePendingSchedule() }
     }
 
-    private func tick(signal: Bool) {
+    func tick(signal: Bool) {
         guard isRunning else { return }
         let oldStatus = state.status
         let finished = state.tick(now: now(), currentBootID: boot())
@@ -175,15 +219,13 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
         if state.status != oldStatus {
             persist(); updateIdleTimer()
             if state.status == .interrupted {
-                center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+                notifications.removePending([notificationID])
                 message = "計時時鐘已重設或資料無法確認，計時中斷，請手動確認相機。"
             } else if finished {
-                center.removePendingNotificationRequests(withIdentifiers: [notificationID])
                 message = "曝光時間已到，請手動關閉相機快門。"
-                if foreground && signal {
-                    if state.sound { AudioServicesPlaySystemSound(1005) }
-                    if state.vibration { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-                }
+                // Keep the OS reminder unless the foreground actually owns delivery. A tick
+                // during suspension/reconciliation must not cancel the only remaining alert.
+                if foreground && signal { signalCompletion() }
             }
         }
     }
@@ -191,16 +233,16 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
     private func validatePendingSchedule() async {
         guard isRunning && state.background else { return }
         let expected = state.id
-        let requests = await center.pendingNotificationRequests()
+        let requests = await notifications.pendingIDs()
         guard isRunning && state.id == expected else { return }
         tick(signal: false)
         guard isRunning else { return }
-        let settings = await center.notificationSettings()
+        let access = await notifications.access()
         guard isRunning && state.id == expected else { return }
         // Near expiry, delivery may already have removed the pending request.
-        if remaining > 1 && (!requests.contains(where: { $0.identifier == notificationID }) || settings.authorizationStatus == .denied || settings.alertSetting != .enabled) {
+        if remaining > 1 && (!requests.contains(notificationID) || access != .allowed) {
             state.status = .interrupted; remaining = 0
-            center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+            notifications.removePending([notificationID])
             message = "背景提醒排程或通知權限已失效，計時已中斷；請確認曝光後重新開始。"
             persist(); updateIdleTimer()
         }
@@ -211,13 +253,28 @@ final class TimerController: NSObject, ObservableObject, UNUserNotificationCente
     }
     private func updateIdleTimer() { UIApplication.shared.isIdleTimerDisabled = foreground && isRunning }
 
+    private func signalCompletion() {
+        guard state.status == .completed, signaledID != state.id else { return }
+        signaledID = state.id
+        notifications.removePending([notificationID])
+        signal(state.sound, state.vibration)
+    }
+
+    /// Called only for delivery while the app is foregrounded. A completed snapshot may
+    /// have been reconciled without a signal, so don't silently suppress that OS delivery.
+    func notificationArrivedInForeground(id: String) {
+        guard id == notificationID else { return }
+        tick(signal: true)
+        if state.status == .completed { signalCompletion() }
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if notification.request.identifier.hasPrefix(Self.prefix) {
-            // The foreground timer owns the signal to prevent double sound/haptics.
             completionHandler([])
-            Task { @MainActor [weak self] in self?.tick(signal: true) }
+            let id = notification.request.identifier
+            Task { @MainActor [weak self] in self?.notificationArrivedInForeground(id: id) }
         } else { completionHandler([.banner, .sound]) }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
