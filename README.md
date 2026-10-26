@@ -1,3 +1,7 @@
+# iOS 版本
+
+新增原生 SwiftUI iOS / iPadOS 16+ 版本，保留既有 Android。建置、模擬器測試、簽章限制及平台差異請見 [ios/README.md](ios/README.md)。iOS 模擬器或未簽署產物不是可直接安裝到 iPhone 的 IPA。
+
 ## 1.0.1 流暢度修正版
 
 使用 release 最佳化建置（關閉偵錯、R8 程式最佳化、移除未使用資源）。

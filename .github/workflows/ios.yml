@@ -1,0 +1,50 @@
+name: iOS build and tests
+on:
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Core and timer tests
+        run: |
+          swift test --package-path ios/ExposureCore
+          swift test --package-path ios/TimerSupport
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+      - name: Select iPhone simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]))')
+          echo "DEVICE=$DEVICE" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+      - name: Build and run simulator UI tests
+        run: |
+          set -o pipefail
+          xcodebuild test -project ios/ExposureAssistant.xcodeproj -scheme ExposureAssistant -destination "platform=iOS Simulator,id=$DEVICE" -derivedDataPath build/ios -resultBundlePath build/ios-tests.xcresult CODE_SIGNING_ALLOWED=NO | tee build-ios.log
+      - name: Unsigned physical-device build
+        run: xcodebuild build -project ios/ExposureAssistant.xcodeproj -scheme ExposureAssistant -destination 'generic/platform=iOS' -configuration Release -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO
+  android-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android build and unit regression
+        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --no-daemon
