@@ -77,10 +77,10 @@ struct ContentView: View {
             .colorMultiply(store.settings.red ? .red : .white)
             .tint(color)
             .foregroundStyle(store.settings.red ? Color.red : Color.primary)
-            .sheet(isPresented: $showSettings) { settingsSheet.colorMultiply(store.settings.red ? .red : .white) }
-            .sheet(isPresented: $showTimer, onDismiss: { if timer.isStarting { timer.cancel() } }) { timerSheet.colorMultiply(store.settings.red ? .red : .white) }
-            .sheet(isPresented: $showStars) { starsSheet.colorMultiply(store.settings.red ? .red : .white) }
-            .sheet(isPresented: $showHelp) { helpSheet.colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showSettings) { settingsSheet.tint(color).colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showTimer, onDismiss: { if timer.isStarting { timer.cancel() } }) { timerSheet.tint(color).colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showStars) { starsSheet.tint(color).colorMultiply(store.settings.red ? .red : .white) }
+            .sheet(isPresented: $showHelp) { helpSheet.tint(color).colorMultiply(store.settings.red ? .red : .white) }
             .onChange(of: store.settings.page) { _ in
                 if astro && !store.settings.hideStars { showStars = true }
             }
@@ -175,7 +175,7 @@ struct ContentView: View {
             }
             let duration = calculation.corrected ?? calculation.targetSeconds
             Button("曝光倒數 · \(secondsLabel(duration))") { timerText = number(duration); timerError = nil; showTimer = true }
-                .buttonStyle(.borderedProminent).disabled(!(0.1...604800).contains(duration)).accessibilityIdentifier("open_timer")
+                .buttonStyle(.borderedProminent).foregroundStyle(.black).disabled(!(0.1...604800).contains(duration)).accessibilityIdentifier("open_timer")
             if form.wrappedValue.solve == .shutter, calculation.corrected == nil, let common = calculation.common, abs(common-calculation.exact) > 0.00001 {
                 Button("以常用時間計時：\(secondsLabel(common))") { timerText = number(common); timerError = nil; showTimer = true }.disabled(!(0.1...604800).contains(common))
             }

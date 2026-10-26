@@ -98,6 +98,13 @@ final class ExposureAssistantUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.staticTexts["corrected_result"].exists)
         XCUIDevice.shared.orientation = .portrait
+        let portrait = XCTNSPredicateExpectation(predicate: NSPredicate { [weak self] _, _ in
+            guard let frame = self?.app.frame else { return false }
+            return frame.height > frame.width
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [portrait], timeout: 5), .completed)
+        // Wait for the rotation animation before saving visual evidence.
+        Thread.sleep(forTimeInterval: 1)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "iOS exposure film result"
         screenshot.lifetime = .keepAlways
