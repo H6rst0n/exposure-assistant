@@ -51,6 +51,7 @@ jobs:
               for start in range(0, len(data), 1000): print(data[start:start+1000])
               print(f'SCREENSHOT_END {i}')
           PYCODE
+          fi
       - name: Unsigned physical-device build
         run: xcodebuild build -project ios/ExposureAssistant.xcodeproj -scheme ExposureAssistant -destination 'generic/platform=iOS' -configuration Release -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO
   android-regression:
