@@ -12,6 +12,15 @@ final class ExposureAssistantUITests: XCTestCase {
         for _ in 0..<12 { if element.isHittable { return }; app.swipeUp() }
         XCTAssertTrue(element.isHittable)
     }
+    private func setSwitch(_ element: XCUIElement, on: Bool) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        let desired = on ? "1" : "0"
+        if element.value as? String != desired {
+            // SwiftUI Form exposes the whole labeled row; hit the actual trailing switch.
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(element.value as? String, desired)
+    }
     private func replace(_ field: XCUIElement, with value: String) {
         field.tap()
         let old = field.value as? String ?? ""
@@ -34,7 +43,7 @@ final class ExposureAssistantUITests: XCTestCase {
     func testSettingsPersistAndSeparateAstroForm() {
         app.buttons["load_example"].tap()
         app.buttons["settings"].tap()
-        app.switches["red_toggle"].tap()
+        setSwitch(app.switches["red_toggle"], on: true)
         app.buttons["settings_done"].tap()
         app.terminate()
         app.launchArguments = []
@@ -54,7 +63,7 @@ final class ExposureAssistantUITests: XCTestCase {
         app.buttons["load_example"].tap()
         reveal(app.buttons["open_timer"])
         app.buttons["open_timer"].tap()
-        app.switches["background_toggle"].tap()
+        setSwitch(app.switches["background_toggle"], on: false)
         replace(app.textFields["timer_seconds"], with: "2")
         app.buttons["timer_start"].tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 6))
@@ -73,7 +82,7 @@ final class ExposureAssistantUITests: XCTestCase {
     func testFilmModeAndRotation() {
         app.buttons["load_example"].tap()
         reveal(app.switches["film_toggle"])
-        app.switches["film_toggle"].tap()
+        setSwitch(app.switches["film_toggle"], on: true)
         reveal(app.staticTexts["corrected_result"])
         XCTAssertTrue(app.staticTexts["corrected_result"].label.contains("HP5 Plus"))
         XCUIDevice.shared.orientation = .landscapeLeft
