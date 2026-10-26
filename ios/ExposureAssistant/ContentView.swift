@@ -108,7 +108,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption)
             TextField("輸入", text: text).textFieldStyle(.roundedBorder).keyboardType(.numbersAndPunctuation)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel(title).accessibilityIdentifier(id)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel((id.hasPrefix("reference_") ? "參考 " : (id.hasPrefix("target_") ? "目標 " : "")) + title).accessibilityIdentifier(id)
         }
     }
     private func inputCard(title: String, inputs: Binding<Inputs>, prefix: String, solve: Solve?) -> some View {
@@ -218,7 +218,7 @@ struct ContentView: View {
             Form {
                 Toggle("夜間紅色介面", isOn: $store.settings.red).accessibilityIdentifier("red_toggle")
                 Toggle("調暗 App 內容", isOn: $store.settings.dim)
-                if store.settings.dim { Slider(value: $store.settings.brightness, in: 0.1...1); Text("不改動系統亮度；系統鍵盤與提示不受影響。") }
+                if store.settings.dim { Slider(value: $store.settings.brightness, in: 0.1...1).accessibilityLabel("內容亮度").accessibilityValue("\(Int(store.settings.brightness * 100)) 百分比"); Text("不改動系統亮度；系統鍵盤與提示不受影響。") }
                 Toggle("下次計時聲音", isOn: $store.settings.sound)
                 Toggle("下次前景震動", isOn: $store.settings.vibration)
                 Toggle("不自動顯示 500 法則", isOn: $store.settings.hideStars)

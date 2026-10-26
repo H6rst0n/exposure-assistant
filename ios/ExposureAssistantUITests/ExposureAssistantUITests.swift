@@ -12,6 +12,12 @@ final class ExposureAssistantUITests: XCTestCase {
         for _ in 0..<12 { if element.isHittable { return }; app.swipeUp() }
         XCTAssertTrue(element.isHittable)
     }
+    private func capture(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
     private func setSwitch(_ element: XCUIElement, on: Bool) {
         XCTAssertTrue(element.waitForExistence(timeout: 5))
         let desired = on ? "1" : "0"
@@ -29,10 +35,13 @@ final class ExposureAssistantUITests: XCTestCase {
     }
     func testExampleAndInvalidInput() {
         XCTAssertTrue(app.textFields["reference_aperture"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["reference_aperture"].label, "參考 光圈 f/")
+        capture("iOS reference form")
         app.buttons["load_example"].tap()
         let result = app.staticTexts["exact_result"]
         reveal(result)
         XCTAssertEqual(result.label, "32 秒")
+        capture("iOS exposure result")
         for _ in 0..<8 { app.swipeDown() }
         replace(app.textFields["reference_aperture"], with: "0")
         let error = app.staticTexts["input_error"]
@@ -44,6 +53,7 @@ final class ExposureAssistantUITests: XCTestCase {
         app.buttons["load_example"].tap()
         app.buttons["settings"].tap()
         setSwitch(app.switches["red_toggle"], on: true)
+        capture("iOS night settings")
         app.buttons["settings_done"].tap()
         app.terminate()
         app.launchArguments = []

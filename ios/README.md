@@ -54,3 +54,7 @@ CI 會動態選擇可用 iPhone simulator，不硬編碼裝置名稱。`project.
 - GitHub Actions：標準 public-repo macOS runner 執行 package tests、Xcode simulator UI tests 和 unsigned device Release build；不使用 larger runners。
 
 成功編譯與模擬器通過不等於實機驗證。鎖屏、長時間背景、重開機、通知音量／專注模式、實際震動、裝置耗電與真實曝光時序仍需 iPhone/iPad 實測。測試結果以特定 commit 的 CI 為準，不因本文件存在就宣稱通過。
+
+### 介面驗證範圍
+
+iOS 採可捲動表單；與 Android 不同，沒有固定底部結果列，啟動倒數後需向上捲動查看計時卡。主要控制項有繁體中文輔助使用標籤，參考／目標欄位可區分，但未做 VoiceOver 實機操作測試。現有旋轉自動測試驗證元素存在，不代表已驗證所有小螢幕裁切或最大 Dynamic Type 字級；這些仍需額外裝置／模擬器版面檢查。
